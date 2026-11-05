@@ -145,11 +145,17 @@
     if (!L.voiceOn) L.hush();
     toast(L.voiceOn ? '聲音開' : '聲音關', '');
   };
+  $('zoomInBtn').onclick = () => { L.sfx.click(); L.zoomIn(); toast('放大', ''); };
+  $('zoomOutBtn').onclick = () => { L.sfx.click(); L.zoomOut(); toast('縮小', ''); };
+  $('zoomResetBtn').onclick = () => { L.sfx.click(); L.zoomReset(); toast('還原大小', ''); };
 
   // keyboard assist for teachers
   window.addEventListener('keydown', e => {
     if (!started) return;
     if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); L.zoomIn(); }
+    if (e.key === '-' || e.key === '_') { e.preventDefault(); L.zoomOut(); }
+    if (e.key === '0') { e.preventDefault(); L.zoomReset(); }
   });
 })();

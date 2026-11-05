@@ -83,7 +83,8 @@
 
   // orbit drag (gentle)
   let dragging = false, lx = 0, ly = 0;
-  const polar = { th: 0.15, ph: 0.55, r: 1.7, tx: 0.35, ty: 0.9, tz: 0 };
+  const R_MIN = 0.72, R_MAX = 2.8, R_STEP = 0.22;
+  const polar = { th: 0.15, ph: 0.55, r: 1.55, tx: 0.35, ty: 0.9, tz: 0 };
   function applyCam() {
     const x = polar.tx + polar.r * Math.sin(polar.ph) * Math.cos(polar.th);
     const y = polar.ty + polar.r * Math.cos(polar.ph);
@@ -97,31 +98,98 @@
     if (r != null) polar.r = r;
     applyCam();
   };
+  L.zoomBy = function (delta) {
+    polar.r = L.clamp(polar.r + delta, R_MIN, R_MAX);
+    applyCam();
+    return polar.r;
+  };
+  L.zoomIn = () => L.zoomBy(-R_STEP);
+  L.zoomOut = () => L.zoomBy(R_STEP);
+  L.zoomReset = () => { polar.r = 1.55; polar.th = 0.12; polar.ph = 0.52; applyCam(); };
+  L.getZoom = () => polar.r;
+
   function ptrXY(e) {
     if (typeof e.clientX === 'number') return [e.clientX, e.clientY];
     if (e.touches && e.touches[0]) return [e.touches[0].clientX, e.touches[0].clientY];
     return [0, 0];
   }
-  function onDown(e) {
-    dragging = true;
-    const xy = ptrXY(e); lx = xy[0]; ly = xy[1];
+  // multi-touch pinch
+  const pointers = new Map();
+  let pinchDist0 = 0, pinchR0 = 0, pinching = false;
+  function pointerCount() { return pointers.size; }
+  function pairDist() {
+    const pts = [...pointers.values()];
+    if (pts.length < 2) return 0;
+    const dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y;
+    return Math.hypot(dx, dy) || 1;
   }
-  function onMove(e) {
-    if (!dragging) return;
-    const xy = ptrXY(e); const x = xy[0], y = xy[1];
+  canvas.addEventListener('pointerdown', e => {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    if (pointerCount() >= 2) {
+      pinching = true; dragging = false;
+      pinchDist0 = pairDist(); pinchR0 = polar.r;
+    } else {
+      dragging = true;
+      lx = e.clientX; ly = e.clientY;
+    }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinching && pointerCount() >= 2) {
+      const d = pairDist();
+      const scale = pinchDist0 / d; // fingers closer → zoom in (r smaller)
+      polar.r = L.clamp(pinchR0 * scale, R_MIN, R_MAX);
+      applyCam();
+      return;
+    }
+    if (!dragging || pointerCount() !== 1) return;
+    const x = e.clientX, y = e.clientY;
     const dx = x - lx, dy = y - ly; lx = x; ly = y;
     polar.th -= dx * 0.005;
     polar.ph = L.clamp(polar.ph + dy * 0.004, 0.25, 1.2);
     applyCam();
+  });
+  function endPtr(e) {
+    pointers.delete(e.pointerId);
+    if (pointerCount() < 2) pinching = false;
+    if (pointerCount() === 0) dragging = false;
+    if (pointerCount() === 1) {
+      const p = [...pointers.values()][0];
+      lx = p.x; ly = p.y; dragging = true;
+    }
   }
-  function onUp() { dragging = false; }
-  canvas.addEventListener('pointerdown', onDown);
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointerup', endPtr);
+  canvas.addEventListener('pointercancel', endPtr);
+  canvas.addEventListener('pointerleave', e => { if (e.buttons === 0) endPtr(e); });
   canvas.addEventListener('wheel', e => {
-    polar.r = L.clamp(polar.r + e.deltaY * 0.0015, 1.1, 2.6);
+    e.preventDefault();
+    polar.r = L.clamp(polar.r + e.deltaY * 0.0018, R_MIN, R_MAX);
     applyCam();
-  }, { passive: true });
+  }, { passive: false });
+  // double-click / double-tap → zoom in（短觸先算，拖動唔算）
+  let lastTap = 0, downXY = null, moved = false;
+  canvas.addEventListener('pointerdown', e => {
+    if (e.isPrimary === false) return;
+    downXY = { x: e.clientX, y: e.clientY }; moved = false;
+  }, true);
+  canvas.addEventListener('pointermove', e => {
+    if (!downXY || e.isPrimary === false) return;
+    if (Math.hypot(e.clientX - downXY.x, e.clientY - downXY.y) > 12) moved = true;
+  }, true);
+  canvas.addEventListener('dblclick', e => {
+    e.preventDefault();
+    L.zoomIn();
+  });
+  canvas.addEventListener('pointerup', e => {
+    if (e.isPrimary === false) return;
+    if (pinching || pointerCount() > 1) return;
+    if (moved) { lastTap = 0; return; }
+    const now = performance.now();
+    if (now - lastTap < 320) { L.zoomIn(); lastTap = 0; }
+    else lastTap = now;
+  });
 
   // voice
   L.voiceOn = true;
