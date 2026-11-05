@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>數數小書 · 1 至 20｜將軍澳培智學校</title>
+<!-- BUILD:sen-count-book-v1.1-school-brand -->
+<style>
+  :root{
+    --teal:#2ec4b6; --amber:#ffb703; --good:#3ddc97; --bad:#ff6b6b;
+    --ink:#1b2430; --panel:rgba(17,22,28,.9); --line:rgba(255,255,255,.14); --txt:#eef3f6; --muted:#a8b3bc;
+    --paper:#fff8e7; --paper-ink:#243041; --accent:#1d6fb8;
+    --school-blue:#426eb4;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{
+    margin:0; height:100%; height:100dvh; overflow:hidden;
+    background:#141a20; color:var(--txt);
+    font-family:"Segoe UI", "PingFang HK", "Noto Sans TC", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  body{-webkit-touch-callout:none}
+  #c{position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none}
+  button{font-family:inherit; cursor:pointer; border:0}
+
+  /* top */
+  #top{
+    position:fixed; top:0; left:0; right:0; z-index:6;
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; pointer-events:none;
+    background:linear-gradient(rgba(10,14,18,.75), transparent);
+  }
+  #brand{
+    pointer-events:auto; font-weight:800; font-size:15px; letter-spacing:.2px;
+    color:#fff; text-decoration:none; display:flex; align-items:center; gap:10px;
+    min-width:0;
+  }
+  #brand img.logo{
+    width:40px; height:40px; border-radius:10px; object-fit:contain;
+    background:#fff; flex:none; box-shadow:0 2px 8px rgba(0,0,0,.35);
+  }
+  #brand .btxt{display:flex; flex-direction:column; gap:1px; min-width:0; line-height:1.15}
+  #brand .school{font-size:12px; font-weight:800; color:#dce8ff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:42vw}
+  #brand .app{font-size:16px; font-weight:900}
+  #brand .app b{color:var(--teal)}
+  #tools{margin-left:auto; display:flex; gap:8px; pointer-events:auto; flex:none}
+  .ibtn{
+    width:48px; height:48px; border-radius:14px;
+    background:var(--panel); color:#fff; font-size:22px;
+    border:1px solid var(--line); display:grid; place-items:center;
+  }
+  .ibtn.on{border-color:var(--teal); box-shadow:0 0 0 2px rgba(46,196,182,.35)}
+
+  /* left paper panel */
+  #panel{
+    position:fixed; left:12px; top:68px; bottom:92px;
+    width:min(360px, 36vw); z-index:6; overflow:auto;
+    background:rgba(255,248,231,.96); color:var(--paper-ink);
+    border-radius:18px; padding:18px 18px 16px;
+    box-shadow:0 12px 40px rgba(0,0,0,.45);
+    font-family:Georgia, "Songti TC", "Noto Serif TC", serif;
+  }
+  #panel .kick{
+    font:800 12px/1 "Segoe UI", "PingFang HK", sans-serif;
+    letter-spacing:1.4px; text-transform:uppercase; color:#8a6a2a;
+  }
+  #panel h1{
+    margin:6px 0 10px; font-size:clamp(28px, 4.5vw, 42px); line-height:1.1; color:#1f2a33;
+  }
+  #bigNum{
+    display:grid; place-items:center;
+    width:min(180px, 42%); aspect-ratio:1;
+    margin:8px auto 14px; border-radius:28px;
+    background:linear-gradient(160deg, #e8f6ff, #fff);
+    border:4px solid var(--accent);
+    font:900 clamp(64px, 12vw, 96px)/1 "Segoe UI", Roboto, sans-serif;
+    color:var(--accent);
+    box-shadow:0 10px 0 rgba(29,111,184,.18);
+  }
+  #idea{
+    background:rgba(29,111,184,.1); border-left:6px solid var(--accent);
+    border-radius:8px; padding:10px 12px; font-size:20px; line-height:1.4; margin:0 0 10px;
+    font-family:"Segoe UI", "PingFang HK", sans-serif; font-weight:700;
+  }
+  #text p{
+    margin:8px 0; font-size:18px; line-height:1.45;
+    font-family:"Segoe UI", "PingFang HK", sans-serif;
+  }
+  #text b{color:var(--accent)}
+
+  /* bottom bar */
+  #bar{
+    position:fixed; left:50%; transform:translateX(-50%); bottom:14px; z-index:8;
+    display:flex; align-items:center; gap:8px;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:18px; padding:8px; backdrop-filter:blur(8px);
+    max-width:calc(100% - 16px);
+  }
+  #bar .btn{
+    flex:0 0 auto; min-width:72px; padding:14px 16px; border-radius:14px;
+    background:rgba(255,255,255,.08); color:#fff; font-size:17px; font-weight:800;
+    border:1px solid var(--line);
+  }
+  #bar .btn:disabled{opacity:.35}
+  #bar .btn.primary{background:var(--teal); color:#05332e; border-color:var(--teal)}
+  #bar .btn.go{background:var(--amber); color:#2a1d00; border-color:var(--amber)}
+  #count{min-width:64px; text-align:center; font-weight:800; color:var(--muted); font-variant-numeric:tabular-nums}
+
+  /* toast */
+  #toast{
+    position:fixed; left:50%; bottom:92px; transform:translateX(-50%) translateY(8px);
+    z-index:9; opacity:0; pointer-events:none;
+    background:var(--panel); border:1px solid var(--line); color:#fff;
+    border-radius:14px; padding:12px 18px; font-size:20px; font-weight:800;
+    transition:.25s; max-width:min(520px,92vw); text-align:center;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  #toast.good{border-color:var(--good)} #toast.bad{border-color:var(--bad)}
+  #toast.good::before{content:"✓ "; color:var(--good)}
+  #toast.bad::before{content:"✗ "; color:var(--bad)}
+
+  /* modal quiz N選1 */
+  #modal{
+    position:fixed; inset:0; z-index:12; display:none; align-items:flex-end; justify-content:center;
+    background:rgba(5,8,12,.45); padding:12px;
+  }
+  #modal.show{display:flex}
+  .card{
+    width:min(640px,100%); background:#161c22; border:1px solid var(--line);
+    border-radius:20px; padding:18px 16px 16px; box-shadow:0 20px 60px rgba(0,0,0,.5);
+  }
+  .card .kick{font-size:12px; font-weight:800; letter-spacing:1.2px; color:var(--teal); text-transform:uppercase}
+  .card h2{margin:4px 0 12px; font-size:26px}
+  .opts{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .opt{
+    display:flex; align-items:center; gap:12px;
+    padding:14px 12px; border-radius:16px; text-align:left;
+    background:rgba(255,255,255,.06); border:2px solid var(--line);
+    color:#fff; font-size:22px; font-weight:800;
+  }
+  .opt .mark{
+    width:48px; height:48px; border-radius:50%; flex:none;
+    display:grid; place-items:center; font-size:22px; font-weight:900;
+    background:rgba(255,255,255,.12); border:3px solid rgba(255,255,255,.35);
+  }
+  .opt.right{border-color:var(--good); background:rgba(61,220,151,.18)}
+  .opt.wrong{border-color:var(--bad); background:rgba(255,107,107,.15); animation:shake .35s}
+  @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+  /* start */
+  #start{
+    position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, rgba(12,18,24,.55), rgba(8,11,14,.92));
+    padding:16px;
+  }
+  #start .card{width:min(560px,100%); text-align:center; padding:26px 22px}
+  #start h1{font-size:clamp(28px,6vw,40px); margin:6px 0 8px}
+  #start h1 span{color:var(--teal)}
+  #start p{color:#d6dee4; font-size:18px; line-height:1.45; margin:8px 0 18px}
+  #start .btn{
+    width:100%; padding:16px; border-radius:16px; font-size:20px; font-weight:900;
+    background:var(--teal); color:#05332e; margin-top:8px;
+  }
+  #start .btn.ghost{background:rgba(255,255,255,.08); color:#fff; border:1px solid var(--line)}
+
+  /* mobile: hide side panel, show mini */
+  #mini{
+    display:none; position:fixed; left:10px; right:10px; top:64px; z-index:6;
+    background:rgba(255,248,231,.96); color:var(--paper-ink);
+    border-radius:14px; padding:10px 12px; box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #mini b{display:block; font:900 22px/1.15 "Segoe UI", sans-serif; color:#1f2a33}
+  #mini span{font:700 16px/1.3 "Segoe UI", "PingFang HK", sans-serif; color:#334}
+
+  @media (max-width: 820px), (max-aspect-ratio: 6/5){
+    #panel{display:none}
+    #mini{display:block}
+    #bar{bottom:10px; width:calc(100% - 16px); justify-content:space-between}
+    #bar .btn{padding:12px 10px; font-size:15px; min-width:0}
+    #brand .school{font-size:11px; max-width:48vw}
+    #brand .app{font-size:14px}
+    #brand img.logo{width:36px; height:36px}
+  }
+  @media (max-width: 500px){
+    #brand .school{max-width:38vw}
+  }
+  @media (max-height: 520px) and (min-aspect-ratio: 6/5){
+    #panel{display:none}
+    #mini{left:auto; right:10px; top:58px; width:min(280px,38%); bottom:auto}
+  }
+
+  /* count chips under big number on panel */
+  #chips{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:4px; min-height:28px}
+  #chips i{
+    width:22px; height:22px; border-radius:50%;
+    background:var(--accent); display:inline-block;
+    box-shadow:0 2px 0 rgba(0,0,0,.15);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="top">
+  <a id="brand" href="#" title="開頭">
+    <img class="logo" src="https://www.puichi.edu.hk/it-school/php/webcms/files/upload/tinymce//1a__pui_chi_logo_png_1791177564.png" width="40" height="40" alt="將軍澳培智學校校徽" decoding="async">
+    <span class="btxt">
+      <span class="school">將軍澳培智學校</span>
+      <span class="app">📘 數數小書 · <b>1–20</b></span>
+    </span>
+  </a>
+  <div id="tools">
+    <button class="ibtn on" id="voiceBtn" type="button" title="聲音">🔊</button>
+  </div>
+</div>
+
+<aside id="panel">
+  <div class="kick" id="kick">第 1 頁</div>
+  <h1 id="title">數數小書</h1>
+  <div id="bigNum" hidden>1</div>
+  <div id="chips" hidden></div>
+  <div id="idea">用手指指住，一齊數。</div>
+  <div id="text"><p>打開書，一頁一頁數。</p></div>
+</aside>
+<div id="mini"><b id="miniT">數數小書</b><span id="miniI">用手指指住，一齊數。</span></div>
+
+<div id="bar">
+  <button class="btn" id="btnHome" type="button">🏠</button>
+  <button class="btn" id="btnBack" type="button">←</button>
+  <span id="count">0/0</span>
+  <button class="btn" id="btnSpeak" type="button">🔊 讀</button>
+  <button class="btn" id="btnReplay" type="button">↻</button>
+  <button class="btn primary" id="btnNext" type="button">下一頁 →</button>
+</div>
+
+<div id="toast"></div>
+
+<div id="modal"><div class="card" id="modalCard"></div></div>
+
+<div id="start">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:6px">
+      <img src="https://www.puichi.edu.hk/it-school/php/webcms/files/upload/tinymce//1a__pui_chi_logo_png_1791177564.png" width="48" height="48" alt="" style="border-radius:12px;background:#fff;object-fit:contain">
+      <div class="kick" style="margin:0;text-align:left;line-height:1.3">將軍澳培智學校<br>數學 · 數數</div>
+    </div>
+    <h1>數數小書 · <span>1 至 20</span></h1>
+    <p>一頁一個數。看圖、聽、用手指數。<br>每 5 個數有一題「有幾多？」</p>
+    <button class="btn" id="startBtn" type="button">📖 打開小書</button>
+    <button class="btn ghost" id="jumpBtn" type="button">跳去 11–20</button>
+    <div style="margin-top:14px;font-size:12px;color:#8a96a3;font-weight:600">© 將軍澳培智學校 · designed by Ken Cheng</div>
+  </div>
+</div>
+
+<script src="js/three.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/book.js"></script>
+<script src="js/pages.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
