@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>數數小書 · 1 至 20｜將軍澳培智學校</title>
-<!-- BUILD:sen-count-book-v1.4-diff-quiz-count -->
+<!-- BUILD:sen-count-book-v1.5-ordinal-labels -->
 <p style="display:none" id="feat-tap-count">tap-count-1to1</p>
 <p style="display:none" id="feat-layout-fix">layout-no-overlap-15</p>
 <p style="display:none" id="feat-diff">diff-low-mid-high</p>
+<p style="display:none" id="feat-ordinal">ordinal-sprite-flash</p>
 <style>
   :root{
     --teal:#2ec4b6; --amber:#ffb703; --good:#3ddc97; --bad:#ff6b6b;
@@ -122,6 +123,26 @@
   #toast.good{border-color:var(--good)} #toast.bad{border-color:var(--bad)}
   #toast.good::before{content:"✓ "; color:var(--good)}
   #toast.bad::before{content:"✗ "; color:var(--bad)}
+
+  /* Ordinal screen flash (pairs with 3D fruit label) */
+  #ordFlash{
+    position:fixed; left:50%; top:42%; z-index:11; pointer-events:none;
+    transform:translate(-50%,-50%) scale(.6);
+    font:900 clamp(64px, 18vw, 120px)/1 "Segoe UI", Roboto, sans-serif;
+    color:#fff; text-shadow:0 4px 0 rgba(29,111,184,.9), 0 10px 28px rgba(0,0,0,.45);
+    opacity:0; transition: opacity .12s, transform .22s cubic-bezier(.2,1.4,.4,1);
+    min-width:1.2em; text-align:center;
+  }
+  #ordFlash.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+  #ordFlash.cardinal{
+    font-size:clamp(36px, 10vw, 56px);
+    background:rgba(29,111,184,.92); padding:12px 22px; border-radius:18px;
+    text-shadow:none;
+  }
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
 
   /* modal quiz N選1 */
   #modal{
@@ -271,6 +292,8 @@
 </div>
 
 <div id="toast"></div>
+<div id="ordFlash" aria-hidden="true"></div>
+<div id="ordLive" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
 
 <div id="modal"><div class="card" id="modalCard"></div></div>
 

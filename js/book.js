@@ -307,24 +307,70 @@
     pageR.material.map = texR; pageR.material.needsUpdate = true;
   }
 
-  // pop-up objects: colored fruits + one-to-one tap counting
+  // pop-up objects: colored fruits + one-to-one tap counting + ordinal labels
   const COLORS = [0xff6b6b, 0xffb703, 0x3ddc97, 0x4dabf7, 0xb197fc, 0xff8e53, 0x20c997, 0xf06595];
-  let countState = null; // { total, next, done, items }
+  let countState = null; // CountSession: { total, next, done, locking, items, _just, dense }
   let pulseOff = null;
+  let billboardOff = null;
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
+  const _camQ = new THREE.Quaternion();
+
+  // —— Shared ordinal atlas 1..20 (bake once; never dispose texture) ——
+  const ORD_ATLAS = (() => {
+    const mats = {};
+    for (let n = 1; n <= 20; n++) {
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 128;
+      const x = c.getContext('2d');
+      // solid high-contrast disc
+      x.fillStyle = '#1d6fb8';
+      x.beginPath(); x.arc(64, 64, 60, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = '#ffffff'; x.lineWidth = 8; x.stroke();
+      x.fillStyle = '#ffffff';
+      x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.font = n >= 10 ? '900 56px "Segoe UI", Roboto, sans-serif' : '900 72px "Segoe UI", Roboto, sans-serif';
+      x.fillText(String(n), 64, 70);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      mats[n] = new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthTest: false, depthWrite: false
+      });
+    }
+    return mats;
+  })();
 
   function clearPop() {
     stopPulse();
+    stopBillboard();
     countState = null;
     B._items = [];
     while (popRoot && popRoot.children.length) {
       const o = popRoot.children.pop();
       o.traverse(m => {
+        if (m.userData && m.userData.isOrdinal) {
+          // shared atlas material — do not dispose
+          if (m.material && m.material.map && !m.material.userData) { /* atlas */ }
+          return;
+        }
         if (m.geometry) m.geometry.dispose();
         if (m.material) {
-          if (Array.isArray(m.material)) m.material.forEach(x => x.dispose());
-          else m.material.dispose();
+          if (m.userData && m.userData.skipMatDispose) return;
+          if (Array.isArray(m.material)) m.material.forEach(x => {
+            if (x.map && x.map !== ORD_ATLAS[1]?.map) { /* */ }
+            // check badge textures unique — dispose
+            if (x.map) x.map.dispose();
+            x.dispose();
+          });
+          else {
+            if (m.material.map && !(m.material instanceof THREE.SpriteMaterial && ORD_ATLAS[m.userData && m.userData.ord])) {
+              try { m.material.map.dispose(); } catch (e) {}
+            }
+            if (!(m.material instanceof THREE.SpriteMaterial && m.userData && m.userData.isOrdinal)) {
+              try { m.material.dispose(); } catch (e) {}
+            }
+          }
         }
       });
     }
@@ -332,6 +378,64 @@
 
   function stopPulse() {
     if (pulseOff) { pulseOff(); pulseOff = null; }
+  }
+  function stopBillboard() {
+    if (billboardOff) { billboardOff(); billboardOff = null; }
+  }
+  function startBillboard() {
+    stopBillboard();
+    billboardOff = L.onFrame(() => {
+      if (!countState || !L.camera) return;
+      L.camera.getWorldQuaternion(_camQ);
+      countState.items.forEach(it => {
+        const lab = it.userData.ordinal;
+        if (lab && lab.visible) lab.quaternion.copy(_camQ);
+      });
+    });
+  }
+
+  function makeOrdinalSprite(ord, radius, dense) {
+    const mat = ORD_ATLAS[ord];
+    if (!mat) return null;
+    const spr = new THREE.Sprite(mat);
+    // dense pages: smaller stay labels
+    const base = dense ? Math.max(0.028, radius * 2.1) : Math.max(0.038, radius * 2.6);
+    spr.scale.set(base, base, 1);
+    spr.position.set(0, radius * 2.35, 0);
+    spr.center.set(0.5, 0.5);
+    spr.renderOrder = 20;
+    spr.userData = { isOrdinal: true, ord, baseScale: base, skipMatDispose: true };
+    spr.visible = true;
+    return spr;
+  }
+
+  function attachOrdinal(fruit, ord) {
+    const u = fruit.userData;
+    // remove previous if any (shouldn't)
+    if (u.ordinal) {
+      fruit.remove(u.ordinal);
+      u.ordinal = null;
+    }
+    const dense = !!(countState && countState.dense);
+    const spr = makeOrdinalSprite(ord, u.radius || 0.02, dense);
+    if (!spr) return;
+    fruit.add(spr);
+    u.ordinal = spr;
+    u.ordinalValue = ord;
+    // pop-in scale
+    const bs = spr.userData.baseScale;
+    spr.scale.set(0.001, 0.001, 1);
+    L.tween(0.22, k => {
+      const e = L.ease.outBack(Math.min(1, k));
+      const s = bs * (0.85 + 0.35 * e);
+      spr.scale.set(s, s, 1);
+      spr.position.y = (u.radius || 0.02) * (2.1 + 0.5 * e);
+    }).then(() => {
+      // settle slightly smaller for dense; keep visible as imprint
+      const settle = dense ? bs * 0.92 : bs;
+      spr.scale.set(settle, settle, 1);
+      spr.position.y = (u.radius || 0.02) * 2.35;
+    });
   }
 
   function makeFruit(color, radius) {
@@ -350,7 +454,6 @@
     );
     leaf.scale.set(1.6, 0.4, 1); leaf.position.set(R * 0.45, R * 0.95, 0);
     g.add(leaf);
-    // hit pad ~1.7× body — still separable when body spacing is OK
     const hit = new THREE.Mesh(
       new THREE.SphereGeometry(R * 1.65, 12, 10),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
@@ -364,7 +467,9 @@
       counted: false,
       baseColor: color,
       baseY: R,
-      radius: R
+      radius: R,
+      ordinal: null,
+      ordinalValue: 0
     };
     return g;
   }
@@ -381,13 +486,14 @@
       new THREE.CircleGeometry(s, 24),
       new THREE.MeshBasicMaterial({ map: t, transparent: true, depthTest: false })
     );
-    badge.position.set(s * 0.9, (R || 0.028) * 1.35, s);
+    // sit lower-right so ordinal (top) doesn't fight
+    badge.position.set(s * 1.1, (R || 0.028) * 0.35, s * 1.2);
     badge.renderOrder = 10;
     badge.visible = false;
     return badge;
   }
 
-  function setFruitCounted(fruit, on) {
+  function setFruitCounted(fruit, on, ord) {
     const u = fruit.userData;
     u.counted = on;
     u.check.visible = on;
@@ -395,11 +501,17 @@
       u.bodyMat.emissiveIntensity = 0.05;
       u.bodyMat.color.offsetHSL(0, -0.15, 0.12);
       fruit.scale.setScalar(0.92);
+      if (ord != null) attachOrdinal(fruit, ord);
     } else {
       u.bodyMat.color.setHex(u.baseColor);
       u.bodyMat.emissive.setHex(u.baseColor);
       u.bodyMat.emissiveIntensity = 0.35;
       fruit.scale.setScalar(1);
+      if (u.ordinal) {
+        fruit.remove(u.ordinal);
+        u.ordinal = null;
+        u.ordinalValue = 0;
+      }
     }
   }
 
@@ -420,13 +532,19 @@
   }
 
   function emitCountProgress() {
-    if (!countState) return;
+    if (!countState) {
+      if (typeof B.onCountProgress === 'function') {
+        B.onCountProgress({ next: 1, counted: 0, total: 0, done: false, just: 0 });
+      }
+      return;
+    }
     const ev = {
       next: countState.next,
       counted: countState.next - 1,
       total: countState.total,
       done: countState.done,
-      just: countState._just || 0
+      just: countState._just || 0,
+      ordinal: countState._just || 0
     };
     if (typeof B.onCountProgress === 'function') B.onCountProgress(ev);
   }
@@ -436,25 +554,34 @@
 
     if (fruit.userData.counted) {
       L.sfx.click();
-      if (typeof L.toast === 'function') L.toast('數過喇', '');
-      L.say('數過喇');
+      // re-show ordinal briefly if present
+      if (fruit.userData.ordinalValue) {
+        if (typeof L.toast === 'function') L.toast(String(fruit.userData.ordinalValue) + ' · 數過喇', '');
+        L.say('數過喇');
+      } else {
+        if (typeof L.toast === 'function') L.toast('數過喇', '');
+        L.say('數過喇');
+      }
       return;
     }
 
     if (countState.done) return;
 
+    // CountModel write FIRST
     const ord = countState.next;
     countState.next = ord + 1;
     countState._just = ord;
-    setFruitCounted(fruit, true);
+    setFruitCounted(fruit, true, ord);
     L.sfx.pop();
-    // bounce
+
+    // bounce body
     const y0 = fruit.userData.baseY;
     L.tween(0.2, k => {
       const e = Math.sin(k * Math.PI);
       fruit.position.y = y0 + 0.03 * e;
       fruit.scale.setScalar(0.92 + 0.12 * e);
     });
+
     L.say(String(ord));
     emitCountProgress();
 
@@ -470,6 +597,7 @@
         if (typeof L.toast === 'function') L.toast(line, 'good');
         L.say(line);
         countState.locking = false;
+        countState._just = 0;
         emitCountProgress();
         if (typeof B.onCountComplete === 'function') B.onCountComplete(n);
       }, 380);
@@ -506,12 +634,11 @@
     const moved = Math.hypot(dx, dy) > 14;
     pickDown = null;
     if (moved || dt > 700) return;
-    // ignore if multi-touch zoom just happened
-    if (typeof L.getZoom === 'function' && e.detail > 1) return;
     const fruit = pickFruit(e.clientX, e.clientY);
     if (fruit) {
       e.preventDefault();
       e.stopPropagation();
+      B._lastFruitTap = performance.now(); // suppress double-tap zoom
       tapFruit(fruit);
     }
   });
@@ -528,7 +655,6 @@
     const items = [];
     const interactive = page.kind === 'number' || page.kind === 'quiz';
     const R = fruitRadiusFor(n);
-    // min centre distance in book XZ for diagnostics / safety scale
     let minD = Infinity;
     for (let a = 0; a < dots.length; a++) {
       for (let b = a + 1; b < dots.length; b++) {
@@ -537,8 +663,8 @@
         minD = Math.min(minD, Math.hypot(dx, dz));
       }
     }
-    // if still too tight, shrink a bit more
     const Ruse = (minD < Infinity && minD < R * 2.15) ? Math.max(0.012, minD * 0.42) : R;
+    const dense = n >= 15;
 
     for (let i = 0; i < n; i++) {
       const color = COLORS[i % COLORS.length];
@@ -552,9 +678,8 @@
       items.push(fruit);
     }
     B._items = items;
-    B._layoutMeta = { n, dots: dots.length, R: Ruse, minD: minD === Infinity ? null : minD };
+    B._layoutMeta = { n, dots: dots.length, R: Ruse, minD: minD === Infinity ? null : minD, dense };
 
-    // cascade pop-in, NO auto 1..N speak
     const step = n > 12 ? 0.03 : n > 6 ? 0.06 : 0.1;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
@@ -569,11 +694,11 @@
     }
 
     if (interactive) {
-      countState = { total: n, next: 1, done: false, locking: false, items, _just: 0 };
+      countState = { total: n, next: 1, done: false, locking: false, items, _just: 0, dense };
       startPulse();
+      startBillboard();
       emitCountProgress();
     } else {
-      // quiz: static display, dim pulse off
       items.forEach(it => { it.userData.bodyMat.emissiveIntensity = 0.12; });
       countState = null;
       emitCountProgress();
@@ -588,6 +713,7 @@
     countState._just = 0;
     B._items.forEach(it => setFruitCounted(it, false));
     startPulse();
+    startBillboard();
     emitCountProgress();
   };
 

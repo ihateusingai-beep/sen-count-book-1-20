@@ -186,6 +186,10 @@
     if (e.isPrimary === false) return;
     if (pinching || pointerCount() > 1) return;
     if (moved) { lastTap = 0; return; }
+    // fruit tap just handled → don't zoom
+    if (window.L && L.Book && L.Book._lastFruitTap && performance.now() - L.Book._lastFruitTap < 400) {
+      lastTap = 0; return;
+    }
     const now = performance.now();
     if (now - lastTap < 320) { L.zoomIn(); lastTap = 0; }
     else lastTap = now;

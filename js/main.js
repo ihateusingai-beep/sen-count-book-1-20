@@ -116,6 +116,29 @@
       bn.style.transform = ev.done ? 'scale(1.08)' : 'scale(1)';
       bn.style.transition = 'transform .2s';
     }
+
+    // Screen flash + aria-live for ordinal (1..N) — dual channel with 3D label
+    if (ev.ordinal > 0 && !ev.done) {
+      flashOrdinal(ev.ordinal);
+    } else if (ev.done && ev.total > 0) {
+      flashOrdinal(ev.total, true);
+    }
+  }
+
+  function flashOrdinal(n, cardinal) {
+    const live = $('ordLive');
+    if (live) {
+      live.textContent = cardinal ? `有 ${n} 個` : String(n);
+    }
+    const flash = $('ordFlash');
+    if (!flash) return;
+    flash.textContent = cardinal ? `有 ${n} 個` : String(n);
+    flash.classList.remove('show', 'cardinal');
+    void flash.offsetWidth;
+    if (cardinal) flash.classList.add('cardinal');
+    flash.classList.add('show');
+    clearTimeout(flashOrdinal._t);
+    flashOrdinal._t = setTimeout(() => flash.classList.remove('show', 'cardinal'), cardinal ? 1200 : 550);
   }
 
   L.Book.onCountProgress = paintCountProgress;
