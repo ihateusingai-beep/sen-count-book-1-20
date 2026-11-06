@@ -23,16 +23,16 @@
       color: DOT[n - 1],
       dot: DOT[n - 1],
       title: `${n}　${CANT[n]}`,
-      idea: `有 ${n} 個。用手指一齊數。`,
-      caption: `圖 · ${n} 個水果`,
-      speak: `呢頁係數字 ${n}。有 ${n} 個。我哋一齊數。`,
-      countSpeak: true,
-      showLabels: n <= 10,
+      idea: `撳水果，一齊數到 ${n}`,
+      caption: `圖 · ${n} 個水果 · 撳一撳`,
+      speak: `有一啲水果。用手指撳，一齊數。`,
+      countSpeak: false,
+      showLabels: false,
       panel: {
         kick: `第 ${n} 頁 · 數字`,
         title: `${n}　${CANT[n]}`,
-        idea: `有 ${n} 個`,
-        text: `<p>用手指指住每一個。</p><p>一齊數：<b>1</b> 到 <b>${n}</b>。</p>`
+        idea: `撳水果數數`,
+        text: `<p>撳一粒，讀 <b>1</b>、<b>2</b>…</p><p>數齊會話：有 <b>${n}</b> 個。</p><p id="countProg">已數 <b>0</b> / ${n}</p>`
       }
     };
   }

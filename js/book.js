@@ -284,10 +284,18 @@
     pageR.material.map = texR; pageR.material.needsUpdate = true;
   }
 
-  // pop-up objects: colored spheres / fruits
+  // pop-up objects: colored fruits + one-to-one tap counting
   const COLORS = [0xff6b6b, 0xffb703, 0x3ddc97, 0x4dabf7, 0xb197fc, 0xff8e53, 0x20c997, 0xf06595];
+  let countState = null; // { total, next, done, items }
+  let pulseOff = null;
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+
   function clearPop() {
-    while (popRoot.children.length) {
+    stopPulse();
+    countState = null;
+    B._items = [];
+    while (popRoot && popRoot.children.length) {
       const o = popRoot.children.pop();
       o.traverse(m => {
         if (m.geometry) m.geometry.dispose();
@@ -299,48 +307,205 @@
     }
   }
 
-  function makeFruit(color, labeled) {
-    const g = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.SphereGeometry(0.028, 24, 18),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.05 })
+  function stopPulse() {
+    if (pulseOff) { pulseOff(); pulseOff = null; }
+  }
+
+  function makeCheckBadge() {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    const x = c.getContext('2d');
+    x.fillStyle = '#3ddc97'; x.beginPath(); x.arc(64, 64, 58, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#fff'; x.lineWidth = 12; x.lineCap = 'round'; x.lineJoin = 'round';
+    x.beginPath(); x.moveTo(36, 66); x.lineTo(56, 86); x.lineTo(94, 42); x.stroke();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const badge = new THREE.Mesh(
+      new THREE.CircleGeometry(0.018, 24),
+      new THREE.MeshBasicMaterial({ map: t, transparent: true, depthTest: false })
     );
+    badge.position.set(0.016, 0.042, 0.02);
+    badge.renderOrder = 10;
+    badge.visible = false;
+    return badge;
+  }
+
+  function makeFruit(color) {
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color, roughness: 0.45, metalness: 0.05,
+      emissive: new THREE.Color(color), emissiveIntensity: 0.35
+    });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.028, 24, 18), bodyMat);
     body.castShadow = true;
     g.add(body);
-    // leaf
     const leaf = new THREE.Mesh(
       new THREE.SphereGeometry(0.01, 8, 8),
       new THREE.MeshStandardMaterial({ color: 0x2f9e44, roughness: 0.8 })
     );
     leaf.scale.set(1.6, 0.4, 1); leaf.position.set(0.012, 0.026, 0);
     g.add(leaf);
-    if (labeled != null) {
-      const c = document.createElement('canvas'); c.width = 128; c.height = 128;
-      const x = c.getContext('2d');
-      x.fillStyle = '#fff'; x.beginPath(); x.arc(64, 64, 50, 0, Math.PI * 2); x.fill();
-      x.fillStyle = '#1b2430'; x.font = '900 64px sans-serif';
-      x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.fillText(String(labeled), 64, 70);
-      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-      const badge = new THREE.Mesh(
-        new THREE.CircleGeometry(0.014, 20),
-        new THREE.MeshBasicMaterial({ map: t, transparent: true })
-      );
-      badge.position.set(0, 0.01, 0.029);
-      g.add(badge);
-    }
+    // large invisible hit pad (SEN finger) — opacity 0, still raycastable
+    const hit = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055, 12, 10),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    );
+    hit.userData.isHit = true;
+    g.add(hit);
+    const check = makeCheckBadge();
+    g.add(check);
+    g.userData = {
+      body, bodyMat, check, hit,
+      counted: false,
+      baseColor: color,
+      baseY: 0.028
+    };
     return g;
   }
 
+  function setFruitCounted(fruit, on) {
+    const u = fruit.userData;
+    u.counted = on;
+    u.check.visible = on;
+    if (on) {
+      u.bodyMat.emissiveIntensity = 0.05;
+      u.bodyMat.color.offsetHSL(0, -0.15, 0.12);
+      fruit.scale.setScalar(0.92);
+    } else {
+      u.bodyMat.color.setHex(u.baseColor);
+      u.bodyMat.emissive.setHex(u.baseColor);
+      u.bodyMat.emissiveIntensity = 0.35;
+      fruit.scale.setScalar(1);
+    }
+  }
+
+  function startPulse() {
+    stopPulse();
+    pulseOff = L.onFrame((dt, t) => {
+      if (!countState || countState.done) return;
+      const pulse = 0.28 + 0.22 * Math.sin(t * 4.2);
+      countState.items.forEach(it => {
+        if (!it.userData.counted) {
+          it.userData.bodyMat.emissiveIntensity = pulse;
+          it.position.y = it.userData.baseY + 0.004 * Math.sin(t * 5 + it.position.x * 30);
+        } else {
+          it.position.y = it.userData.baseY;
+        }
+      });
+    });
+  }
+
+  function emitCountProgress() {
+    if (!countState) return;
+    const ev = {
+      next: countState.next,
+      counted: countState.next - 1,
+      total: countState.total,
+      done: countState.done,
+      just: countState._just || 0
+    };
+    if (typeof B.onCountProgress === 'function') B.onCountProgress(ev);
+  }
+
+  function tapFruit(fruit) {
+    if (!countState || countState.locking) return;
+
+    if (fruit.userData.counted) {
+      L.sfx.click();
+      if (typeof L.toast === 'function') L.toast('數過喇', '');
+      L.say('數過喇');
+      return;
+    }
+
+    if (countState.done) return;
+
+    const ord = countState.next;
+    countState.next = ord + 1;
+    countState._just = ord;
+    setFruitCounted(fruit, true);
+    L.sfx.pop();
+    // bounce
+    const y0 = fruit.userData.baseY;
+    L.tween(0.2, k => {
+      const e = Math.sin(k * Math.PI);
+      fruit.position.y = y0 + 0.03 * e;
+      fruit.scale.setScalar(0.92 + 0.12 * e);
+    });
+    L.say(String(ord));
+    emitCountProgress();
+
+    if (countState.next > countState.total) {
+      countState.done = true;
+      countState.locking = true;
+      stopPulse();
+      setTimeout(() => {
+        if (!countState) return;
+        L.sfx.good();
+        const n = countState.total;
+        const line = `有 ${n} 個！`;
+        if (typeof L.toast === 'function') L.toast(line, 'good');
+        L.say(line);
+        countState.locking = false;
+        emitCountProgress();
+        if (typeof B.onCountComplete === 'function') B.onCountComplete(n);
+      }, 380);
+    }
+  }
+
+  function pickFruit(clientX, clientY) {
+    if (!countState || !B._items || !B._items.length) return null;
+    const rect = L.renderer.domElement.getBoundingClientRect();
+    pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerNdc, L.camera);
+    const hits = raycaster.intersectObjects(B._items, true);
+    for (const h of hits) {
+      let o = h.object;
+      while (o && o.parent && !o.userData.body) o = o.parent;
+      if (o && o.userData && o.userData.body) return o;
+    }
+    return null;
+  }
+
+  // pointer: tap fruit if little movement (don't fight drag/zoom)
+  let pickDown = null;
+  const canvasEl = L.renderer.domElement;
+  canvasEl.addEventListener('pointerdown', e => {
+    if (e.isPrimary === false) return;
+    if (e.button != null && e.button !== 0) return;
+    pickDown = { x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now() };
+  });
+  canvasEl.addEventListener('pointerup', e => {
+    if (!pickDown || e.pointerId !== pickDown.id) return;
+    const dx = e.clientX - pickDown.x, dy = e.clientY - pickDown.y;
+    const dt = performance.now() - pickDown.t;
+    const moved = Math.hypot(dx, dy) > 14;
+    pickDown = null;
+    if (moved || dt > 700) return;
+    // ignore if multi-touch zoom just happened
+    if (typeof L.getZoom === 'function' && e.detail > 1) return;
+    const fruit = pickFruit(e.clientX, e.clientY);
+    if (fruit) {
+      e.preventDefault();
+      e.stopPropagation();
+      tapFruit(fruit);
+    }
+  });
+
   async function showPop(page) {
     clearPop();
-    if (page.kind !== 'number' && page.kind !== 'quiz') return;
+    if (page.kind !== 'number' && page.kind !== 'quiz') {
+      emitCountProgress();
+      return;
+    }
     const n = page.n || page.quizN || 0;
+    if (!n) return;
     const dots = layoutDots(n);
     const items = [];
+    // interactive count only on number pages (quiz = look then A-D)
+    const interactive = page.kind === 'number';
+
     for (let i = 0; i < n; i++) {
       const color = COLORS[i % COLORS.length];
-      const fruit = makeFruit(color, page.showLabels ? i + 1 : null);
+      const fruit = makeFruit(color);
       const p = dots[i];
       const x = (p.x - 0.5) * PW * 0.85;
       const z = (p.y - 0.5) * PH * 0.75;
@@ -349,21 +514,44 @@
       popRoot.add(fruit);
       items.push(fruit);
     }
-    // sequential pop for counting
+    B._items = items;
+
+    // cascade pop-in, NO auto 1..N speak
+    const step = n > 12 ? 0.04 : n > 6 ? 0.07 : 0.1;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       L.sfx.pop();
-      await L.tween(0.22, k => {
+      await L.tween(0.18, k => {
         const e = L.ease.outBack(k);
         it.scale.setScalar(e);
         it.position.y = 0.028 * e;
-        it.rotation.y = e * Math.PI * 2 * 0.15;
+        it.userData.baseY = 0.028;
       });
-      if (page.countSpeak) L.say(String(i + 1));
-      await L.wait(page.countSpeak ? 0.28 : 0.05);
+      await L.wait(step);
     }
-    B._items = items;
+
+    if (interactive) {
+      countState = { total: n, next: 1, done: false, locking: false, items, _just: 0 };
+      startPulse();
+      emitCountProgress();
+    } else {
+      // quiz: static display, dim pulse off
+      items.forEach(it => { it.userData.bodyMat.emissiveIntensity = 0.12; });
+      countState = null;
+      emitCountProgress();
+    }
   }
+
+  B.resetCount = function () {
+    if (!countState || !B._items) return;
+    countState.next = 1;
+    countState.done = false;
+    countState.locking = false;
+    countState._just = 0;
+    B._items.forEach(it => setFruitCounted(it, false));
+    startPulse();
+    emitCountProgress();
+  };
 
   async function flip(dir) {
     // simple: hide pops, rotate leaf group
@@ -396,7 +584,15 @@
     await showPop(pages[i]);
   };
 
-  B.replay = () => showPop(B.pages[B.i]);
+  B.replay = async function () {
+    await showPop(B.pages[B.i]);
+  };
   B.clear = clearPop;
   B.current = () => B.pages[B.i];
+  B.getCountState = () => countState ? {
+    next: countState.next,
+    counted: Math.max(0, countState.next - 1),
+    total: countState.total,
+    done: !!countState.done
+  } : null;
 })();
