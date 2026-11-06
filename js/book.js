@@ -526,7 +526,7 @@
     if (!n) return;
     const dots = layoutDots(n);
     const items = [];
-    const interactive = page.kind === 'number';
+    const interactive = page.kind === 'number' || page.kind === 'quiz';
     const R = fruitRadiusFor(n);
     // min centre distance in book XZ for diagnostics / safety scale
     let minD = Infinity;

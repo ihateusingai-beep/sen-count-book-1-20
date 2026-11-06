@@ -14,6 +14,32 @@
     '#ffa94d', '#66d9e8', '#ff6b9d', '#8ce99a', '#74c0fc'
   ];
 
+  /** Build MC options pool (always includes answer). count = 2 or 3. */
+  function buildChoices(answer, count) {
+    const opts = new Set([answer]);
+    for (let d = 1; d <= 8 && opts.size < count; d++) {
+      if (answer - d >= 1) opts.add(answer - d);
+      if (opts.size >= count) break;
+      if (answer + d <= 20) opts.add(answer + d);
+    }
+    let k = 1;
+    while (opts.size < count) {
+      const v = ((answer + k * 3 - 1) % 20) + 1;
+      opts.add(v);
+      k++;
+    }
+    const arr = [...opts];
+    // stable shuffle by answer
+    const rot = answer % arr.length;
+    const shuffled = arr.slice(rot).concat(arr.slice(0, rot));
+    // ensure not sorted-only giveaway: swap if correct always first
+    if (shuffled[0] === answer && shuffled.length > 1) {
+      const j = 1 + (answer % (shuffled.length - 1));
+      const t = shuffled[0]; shuffled[0] = shuffled[j]; shuffled[j] = t;
+    }
+    return shuffled.slice(0, count);
+  }
+
   function numPage(n) {
     return {
       kind: 'number',
@@ -38,20 +64,6 @@
   }
 
   function quizPage(afterN, answer) {
-    // wrong options nearby unique
-    const opts = new Set([answer]);
-    const pool = [];
-    for (let d = 1; d <= 4 && opts.size < 4; d++) {
-      if (answer - d >= 1) opts.add(answer - d);
-      if (opts.size >= 4) break;
-      if (answer + d <= 20) opts.add(answer + d);
-    }
-    while (opts.size < 4) opts.add(Math.min(20, answer + opts.size + 1));
-    const options = [...opts].sort((a, b) => a - b);
-    // shuffle lightly but keep stable-ish: rotate
-    const rot = answer % 3;
-    const shuffled = options.slice(rot).concat(options.slice(0, rot));
-    const correct = shuffled.indexOf(answer);
     return {
       kind: 'quiz',
       n: answer,
@@ -59,23 +71,24 @@
       no: afterN + 0.5,
       running: '數數小書 · 小測驗',
       color: '#1d6fb8',
+      dot: '#1d6fb8',
       title: '有幾多個？',
-      idea: '睇書上面，揀正確個數。',
-      speak: `小測驗。睇吓有幾多個？揀 A B C 或者 D。`,
+      idea: '先撳水果數數，再答題',
+      caption: `圖 · ${answer} 個 · 先數再答`,
+      speak: '小測驗。可以先撳水果數一數，再撳答題。',
       countSpeak: false,
       showLabels: false,
       quiz: {
         q: '有幾多個？',
-        options: shuffled,
-        correct,
+        answer,
         sayCorrect: `啱！有 ${answer} 個。`,
         sayWrong: '未啱，再試。'
       },
       panel: {
         kick: '小測驗',
         title: '有幾多個？',
-        idea: '睇圖，揀答案',
-        text: '<p>撳 <b>A B C D</b> 其中一個。</p>'
+        idea: '先數，再答',
+        text: `<p>① 撳水果數數</p><p>② 撳下面 <b>答題</b></p><p id="countProg">已數 <b>0</b> / ${answer}</p>`
       }
     };
   }
@@ -120,8 +133,8 @@
 
   L.PAGES = pages;
   L.CANT = CANT;
+  L.buildChoices = buildChoices;
 
-  // index of first page for number 11 (jump)
   L.PAGE_INDEX = {
     cover: 0,
     n1: pages.findIndex(p => p.kind === 'number' && p.n === 1),
