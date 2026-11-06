@@ -118,17 +118,18 @@
       x.textAlign = 'center';
       x.fillText(page.caption || `圖 · ${page.n} 個`, PAGE_PX / 2, PAGE_PY - 80);
       x.textAlign = 'left';
-      // faint printed circles as silhouette placeholders
+      // faint printed circles as silhouette placeholders — same layout as 3D
       const n = page.n;
+      const Rpx = Math.max(10, Math.min(36, Math.floor(420 / Math.ceil(Math.sqrt(n)))));
       layoutDots(n).forEach((p, i) => {
         const px = 90 + p.x * (PAGE_PX - 180);
         const py = 120 + p.y * (PAGE_PY - 260);
         x.beginPath();
-        x.fillStyle = 'rgba(40,60,80,0.12)';
-        x.arc(px, py, 28, 0, Math.PI * 2); x.fill();
-        x.strokeStyle = 'rgba(40,60,80,0.35)'; x.lineWidth = 3; x.stroke();
-        x.fillStyle = 'rgba(40,60,80,0.45)'; x.font = '800 22px sans-serif';
-        x.textAlign = 'center'; x.fillText(String(i + 1), px, py + 8); x.textAlign = 'left';
+        x.fillStyle = 'rgba(40,60,80,0.10)';
+        x.arc(px, py, Rpx, 0, Math.PI * 2); x.fill();
+        x.strokeStyle = 'rgba(40,60,80,0.4)'; x.lineWidth = 3; x.stroke();
+        x.fillStyle = 'rgba(40,60,80,0.55)'; x.font = `800 ${Math.max(14, Math.floor(Rpx * 0.7))}px sans-serif`;
+        x.textAlign = 'center'; x.fillText(String(i + 1), px, py + Rpx * 0.28); x.textAlign = 'left';
       });
     } else if (page.kind === 'quiz') {
       x.fillStyle = '#1f2a33'; x.font = '800 36px "Segoe UI", "PingFang HK", sans-serif';
@@ -173,23 +174,45 @@
     if (line) x.fillText(line, left, yy);
   }
 
-  // unit-square layout for n dots (centered grid)
+  // unit-square layout for n dots — maximise spacing, avoid visual merge
   function layoutDots(n) {
     if (n <= 0) return [];
-    if (n === 1) return [{ x: 0.5, y: 0.45 }];
-    const cols = n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5;
+    if (n === 1) return [{ x: 0.5, y: 0.48 }];
+    // pick grid that stays as square as possible
+    let cols = Math.ceil(Math.sqrt(n));
+    if (n <= 3) cols = n;
+    else if (n <= 6) cols = 3;
+    else if (n <= 12) cols = 4;
+    else if (n <= 20) cols = 5;
+    else cols = Math.ceil(Math.sqrt(n));
     const rows = Math.ceil(n / cols);
     const out = [];
+    // uniform cell grid (do NOT re-center last row with different divisor — that can
+    // collapse spacing vs full rows and make two fruits look like one).
+    const x0 = 0.10, x1 = 0.90, y0 = 0.14, y1 = 0.82;
     for (let i = 0; i < n; i++) {
-      const r = Math.floor(i / cols), c = i % cols;
-      const inRow = Math.min(cols, n - r * cols);
-      const x = (c + 0.5) / inRow * 0.85 + 0.075;
-      const y = (r + 0.5) / rows * 0.7 + 0.1;
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      // center leftover cells in the last row without changing neighbour gaps
+      const inRow = (r === rows - 1) ? (n - r * cols) : cols;
+      const colOffset = (cols - inRow) / 2;
+      const x = cols === 1 ? 0.5 : x0 + ((c + colOffset) + 0.5) / cols * (x1 - x0);
+      const y = rows === 1 ? 0.48 : y0 + (r + 0.5) / rows * (y1 - y0);
       out.push({ x, y });
     }
     return out;
   }
   B.layoutDots = layoutDots;
+
+  /** Fruit radius in book space — shrink when crowded so N items stay visually distinct */
+  function fruitRadiusFor(n) {
+    if (n <= 4) return 0.030;
+    if (n <= 9) return 0.026;
+    if (n <= 12) return 0.022;
+    if (n <= 16) return 0.018;
+    return 0.016; // 17–20
+  }
+  B.fruitRadiusFor = fruitRadiusFor;
 
   // build book mesh
   let book, pageL, pageR, leafG, popRoot, built = false;
@@ -311,54 +334,57 @@
     if (pulseOff) { pulseOff(); pulseOff = null; }
   }
 
-  function makeCheckBadge() {
+  function makeFruit(color, radius) {
+    const R = radius || 0.028;
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color, roughness: 0.45, metalness: 0.05,
+      emissive: new THREE.Color(color), emissiveIntensity: 0.35
+    });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(R, 22, 16), bodyMat);
+    body.castShadow = true;
+    g.add(body);
+    const leaf = new THREE.Mesh(
+      new THREE.SphereGeometry(R * 0.36, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x2f9e44, roughness: 0.8 })
+    );
+    leaf.scale.set(1.6, 0.4, 1); leaf.position.set(R * 0.45, R * 0.95, 0);
+    g.add(leaf);
+    // hit pad ~1.7× body — still separable when body spacing is OK
+    const hit = new THREE.Mesh(
+      new THREE.SphereGeometry(R * 1.65, 12, 10),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+    );
+    hit.userData.isHit = true;
+    g.add(hit);
+    const check = makeCheckBadge(R);
+    g.add(check);
+    g.userData = {
+      body, bodyMat, check, hit,
+      counted: false,
+      baseColor: color,
+      baseY: R,
+      radius: R
+    };
+    return g;
+  }
+
+  function makeCheckBadge(R) {
     const c = document.createElement('canvas'); c.width = 128; c.height = 128;
     const x = c.getContext('2d');
     x.fillStyle = '#3ddc97'; x.beginPath(); x.arc(64, 64, 58, 0, Math.PI * 2); x.fill();
     x.strokeStyle = '#fff'; x.lineWidth = 12; x.lineCap = 'round'; x.lineJoin = 'round';
     x.beginPath(); x.moveTo(36, 66); x.lineTo(56, 86); x.lineTo(94, 42); x.stroke();
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const s = Math.max(0.012, (R || 0.028) * 0.7);
     const badge = new THREE.Mesh(
-      new THREE.CircleGeometry(0.018, 24),
+      new THREE.CircleGeometry(s, 24),
       new THREE.MeshBasicMaterial({ map: t, transparent: true, depthTest: false })
     );
-    badge.position.set(0.016, 0.042, 0.02);
+    badge.position.set(s * 0.9, (R || 0.028) * 1.35, s);
     badge.renderOrder = 10;
     badge.visible = false;
     return badge;
-  }
-
-  function makeFruit(color) {
-    const g = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color, roughness: 0.45, metalness: 0.05,
-      emissive: new THREE.Color(color), emissiveIntensity: 0.35
-    });
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.028, 24, 18), bodyMat);
-    body.castShadow = true;
-    g.add(body);
-    const leaf = new THREE.Mesh(
-      new THREE.SphereGeometry(0.01, 8, 8),
-      new THREE.MeshStandardMaterial({ color: 0x2f9e44, roughness: 0.8 })
-    );
-    leaf.scale.set(1.6, 0.4, 1); leaf.position.set(0.012, 0.026, 0);
-    g.add(leaf);
-    // large invisible hit pad (SEN finger) — opacity 0, still raycastable
-    const hit = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 12, 10),
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
-    );
-    hit.userData.isHit = true;
-    g.add(hit);
-    const check = makeCheckBadge();
-    g.add(check);
-    g.userData = {
-      body, bodyMat, check, hit,
-      counted: false,
-      baseColor: color,
-      baseY: 0.028
-    };
-    return g;
   }
 
   function setFruitCounted(fruit, on) {
@@ -500,32 +526,44 @@
     if (!n) return;
     const dots = layoutDots(n);
     const items = [];
-    // interactive count only on number pages (quiz = look then A-D)
     const interactive = page.kind === 'number';
+    const R = fruitRadiusFor(n);
+    // min centre distance in book XZ for diagnostics / safety scale
+    let minD = Infinity;
+    for (let a = 0; a < dots.length; a++) {
+      for (let b = a + 1; b < dots.length; b++) {
+        const dx = (dots[a].x - dots[b].x) * PW * 0.88;
+        const dz = (dots[a].y - dots[b].y) * PH * 0.78;
+        minD = Math.min(minD, Math.hypot(dx, dz));
+      }
+    }
+    // if still too tight, shrink a bit more
+    const Ruse = (minD < Infinity && minD < R * 2.15) ? Math.max(0.012, minD * 0.42) : R;
 
     for (let i = 0; i < n; i++) {
       const color = COLORS[i % COLORS.length];
-      const fruit = makeFruit(color);
+      const fruit = makeFruit(color, Ruse);
       const p = dots[i];
-      const x = (p.x - 0.5) * PW * 0.85;
-      const z = (p.y - 0.5) * PH * 0.75;
+      const x = (p.x - 0.5) * PW * 0.88;
+      const z = (p.y - 0.5) * PH * 0.78;
       fruit.position.set(x, 0, z);
       fruit.scale.setScalar(0.001);
       popRoot.add(fruit);
       items.push(fruit);
     }
     B._items = items;
+    B._layoutMeta = { n, dots: dots.length, R: Ruse, minD: minD === Infinity ? null : minD };
 
     // cascade pop-in, NO auto 1..N speak
-    const step = n > 12 ? 0.04 : n > 6 ? 0.07 : 0.1;
+    const step = n > 12 ? 0.03 : n > 6 ? 0.06 : 0.1;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       L.sfx.pop();
-      await L.tween(0.18, k => {
+      await L.tween(0.16, k => {
         const e = L.ease.outBack(k);
         it.scale.setScalar(e);
-        it.position.y = 0.028 * e;
-        it.userData.baseY = 0.028;
+        it.position.y = it.userData.radius * e;
+        it.userData.baseY = it.userData.radius;
       });
       await L.wait(step);
     }
